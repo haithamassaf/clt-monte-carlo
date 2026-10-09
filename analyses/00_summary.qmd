@@ -141,7 +141,7 @@ Surprisingly, **bimodality did not matter much.** The two-humped life/death popu
 |---|---|---|---|
 | None | Normal, Die, Exponential, Small binomial, Life/death | Yes (n = 1 to 80) | Yes, at every n, even n = 2 |
 | Identically distributed | Basketball | Yes (n = 125) | Yes, using each shot's own p_t |
-| Independence | Dependent failure | Yes, but slowly (n = 300) | **No**: SE 2.16× too large and mean ≠ 1 |
+| Independence | Dependent failure | Yes, but slowly (n = 300) | **No**:   true SE 2.16× larger than σ/√n predicts, and mean ≠ 1 |
 | Finite variance | Cauchy | **Never** | **Undefined**: spread never shrinks |
 
 ## Conclusions about the CLT

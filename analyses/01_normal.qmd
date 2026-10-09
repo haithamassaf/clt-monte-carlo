@@ -47,7 +47,7 @@ knitr::kable(coarse$table, digits = 4)
 plot_convergence(coarse$table, pop)
 ```
 
-**Pass 2 (refined):** narrower values around the transition.
+**Pass 2 (checking smaller n):** every n passed in pass 1, so I checked down to n = 1.
 
 ```{r pass2}
 ns_fine <- c(1, 2, 3, 4)   # every n passed in pass 1, so check down to n = 1
@@ -55,7 +55,7 @@ fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
 knitr::kable(fine$table, digits = 4)
 ```
 
-Every value in pass 1 already passed, starting at the smallest n = 2. So instead of refining between two values, I checked downward to n = 1, 2, 3, 4 to confirm the smallest possible sample size also passes..
+Every value in pass 1 already passed, starting at the smallest n = 2. So instead of refining between two values, I checked downward to n = 1, 2, 3, 4 to confirm the smallest possible sample size also passes.
 
 ## 5. Simulated vs. theoretical mean and standard error
 
