@@ -33,7 +33,7 @@ before each simulation, with B = 10,000 Monte Carlo repetitions.
 
 - **There is no universal n = 30.** The smallest sample size at which the sample mean looked approximately normal ranged from **n = 1** (Normal) to **n = 300** (dependent failures). For the Cauchy, **no n works**.
 - **Skewness and discreteness set the pace.** Symmetric, smooth populations converged fast (Die 9, Life/death 16). Skewed or highly discrete ones were slow (Exponential 80, Binomial(5, 0.1) 80, Basketball 125).
-- **The assumptions matter most.** Independent but non-identical data still followed the CLT. Dependent data converged slowly *and* broke the σ/√n formula (SE 2.16× too large). Infinite-variance (Cauchy) data never converged: averaging 1,000 values was no better than one.
+- **The assumptions matter most.** Independent but non-identical data still followed the CLT. Dependent data converged slowly *and* broke the σ/√n formula   (true SE 2.16× larger than σ/√n predicts). Infinite-variance (Cauchy) data never converged: averaging 1,000 values was no better than one.
 
 | Population | Smallest n judged normal |
 |---|---|
