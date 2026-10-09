@@ -1,0 +1,102 @@
+---
+title: "CLT Convergence: Dependent Machine Failure (Extra Credit)"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "dependent_failure"
+```
+
+## 1. What does the population look like?
+
+Operating times between machine failures. The failure rate depends on the previous operating time: λ_t = λ₀·exp(β(X_{t−1} − μ)), X_t | X_{t−1} ~ Exp(λ_t), with λ₀ = 1, β = 1.25, μ = 1. A long run makes the next one likely to be short, and the reverse (negative dependence). This **breaks independence**.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The plot shows one long run of the machine. Operating times are continuous and positive, most are short (bunched near 0), and the right tail is very long. About 9% of operating times exceed 5, and the longest is about 38, much longer than an independent Exp(1) would produce. Each value depends on the one before it, so this population breaks the CLT's independence assumption. The draws are also not identically distributed, since the rate changes from step to step.
+## 2. Theoretical mean and standard deviation
+
+There is no simple formula. The theory columns show the **naive i.i.d. Exp(1)** prediction (mean 1, SE 1/√n), which is what you'd assume if you ignored the dependence. Compare the simulation against it.
+
+```{r dependence-check}
+# How dependent are consecutive observations? Look at one long run.
+set.seed(student_id)
+long_run <- r_dependent_failure(100000)
+c(long_run_mean = mean(long_run), long_run_sd = sd(long_run),
+  lag1_correlation = cor(long_run[-1], long_run[-length(long_run)]))
+```
+
+Over one long run of 100,000 failures, the mean operating time was 1.68 and the SD was 2.57, compared with 1 and 1 for an independent Exp(1). The dependence rule changes the distribution itself, not just the relationship between observations. The lag-1 correlation was −0.36. The negative sign confirms the compensating dependence described in the model: a long operating time tends to be followed by a short one, and a short one by a long one.
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: Each operating time is exponential, so I expect strong right skew like the independent exponential. Because the observations are dependent, the effective sample size is smaller than n, so I predict convergence will be slower than the independent exponential's n = 80, perhaps n = 150 or more. I also expect the SE to differ from the naive 1/√n, because the CLT's formula assumes independence.
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(150, 200, 250, 300, 350, 400)   # pass 1 changed between n = 200 and n = 500
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+In pass 1, n = 200 just failed my standard (skewness 0.28, Q-Q correlation 0.9978) and n = 500 passed. I refined between 150 and 400 in steps of 50 to find where both criteria pass and keep passing.
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+The naive i.i.d. Exp(1) predictions were wrong on both counts. The simulated mean was 1.29 at n = 2 and rose to 1.67 at n = 500, not 1. The SE ratio was 1.43 at n = 2 and about 2.1 to 2.15 for every n of 20 or more, so the simulated spread was more than twice what 1/√n predicts. If an analyst ignored the dependence and used the Exp(1) formulas, they would get the center wrong and underestimate the uncertainty by more than half. This shows that the CLT's formulas depend on the independence assumption, not just on the shape of each observation.
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show values below, at, and above my chosen n
+for (n in c(30, 300, 500)) {
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = 300}$$
+
+I used the same standard as every other population: |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and Q-Q correlation ≥ 0.998. Kurtosis passed from n = 50 on. Skewness and the Q-Q correlation were the last to pass: at n = 250, skewness was 0.27 and the Q-Q correlation was 0.99792, both just short of the cutoffs. At n = 300, skewness was 0.22 and the Q-Q correlation was 0.9985, and both kept passing at every larger n. At n = 30 the histogram has a long right tail and the Q-Q plot bends up sharply at the right end. At n = 300 the histogram is bell-shaped and the Q-Q points follow the line. The sampling distribution does eventually become normal, because the dependence only reaches back one step, but it takes about 300 observations. That is far more than the "n = 30" rule and almost four times the independent exponential. My conclusion is n = 300, with the important caveat that the usual σ/√n formula is wrong here, so even a normal-looking distribution would give wrong confidence intervals if the dependence were ignored.
+## 7. Limitations and surprises
+
+Three results surprised me. First, the mean of the sample means was not 1, even though every individual operating time is drawn from an exponential distribution. It drifted from 1.29 at n = 2 to about 1.67 at large n, matching the long-run mean of 1.68. The process starts at the baseline rate, but the feedback rule pulls the average up: after a short run the rate drops sharply (to about 0.29 when the previous time is near 0), producing long operating times. Second, the SE was about 2.15 times the naive 1/√n. Part of this is because the true spread of a single operating time is much larger than assumed (SD 2.57, not 1). But compared with 2.57/√n, the simulated SE was actually about 16% smaller. The negative dependence (long runs followed by short ones) partly cancels out within each sample. Third, convergence was much slower than for independent exponential data: about n = 300 instead of 80. At n = 30, skewness was still 0.75, twice the independent exponential's 0.36.

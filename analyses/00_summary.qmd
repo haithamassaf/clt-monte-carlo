@@ -1,0 +1,157 @@
+---
+title: "How Fast Does Normal Happen? Executive Summary"
+subtitle: "Stress-Testing the Central Limit Theorem with Monte Carlo Simulation"
+author: "Haitham Assaf"
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+student_id <- 8515     # last 4 digits of my student ID (same seed as every analysis file)
+B          <- 10000
+
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+# The smallest n I chose in each analysis file (NA = no n works)
+chosen_n <- c(normal = 1, die = 9, exponential = 80, binom_small = 80,
+              cauchy = NA, dependent_failure = 300, basketball = 125,
+              life_death = 16)
+```
+
+## Executive summary
+
+I used Monte Carlo simulation in R (10,000 simulated samples per sample size, seed 8515) to find the smallest sample size *n* at which the sampling distribution of the mean becomes "approximately normal" for eight populations. Five were required (Normal, Die, Exponential, Binomial(5, 0.1), Cauchy) and three were extra credit (a dependent machine-failure process, non-identical basketball shots, and a bimodal age-at-death distribution).
+
+**The answer is not 30.** The required *n* ranged from **1** (Normal) to **300** (dependent failures), and for the Cauchy **no n works**. Three populations needed fewer than 30 observations, four needed more, and one never converged. The sample size needed depends on the population's **skewness**, its **discreteness**, and whether the CLT's **assumptions** (independence, finite variance) hold. The CLT's mean and standard-error formulas were accurate at every *n*, even n = 2, whenever the assumptions held. Only the *shape* of the sampling distribution needed a large *n*.
+
+## How I decided what counts as "normal enough"
+
+No single statistic can decide normality, so I combined three numerical criteria and required all of them, confirmed by looking at the plots:
+
+| Criterion | Cutoff | What it checks |
+|---|---|---|
+| \|skewness\| | ≤ 0.25 | Symmetry: is one tail longer than the other? |
+| \|excess kurtosis\| | ≤ 0.3 | Tail weight: are extreme values more or less common than in a normal curve? |
+| Q-Q correlation | ≥ 0.998 | Overall fit: how close the `qqnorm()` points are to a straight line (1 = perfect) |
+
+**Why these cutoffs.** I set them just above the Monte Carlo noise level, so that I am deciding on real departures from normality, not random variation:
+
+- **The Normal population was my control.** Its sample means are *exactly* normal, yet my simulated skewness was as large as 0.06 and kurtosis as large as 0.13, purely from noise. Cutoffs below these would reject truly normal data.
+- **The reproducibility test** (exponential, seed 8515 vs 8516) showed skewness changing by up to about 0.07 between seeds near the cutoff. A cutoff of 0.2 or lower would let the seed decide the answer, so I used 0.25. That still means only mild skew; on a histogram it is hard to see.
+- **The Q-Q correlation** was the most important addition. For the discrete populations, skewness and kurtosis passed early while the Q-Q plot still showed a clear staircase. For example, the small binomial had skewness 0.21 at n = 25 but a Q-Q correlation of only 0.995. The 0.998 cutoff corresponds to the point where the Q-Q plot looks straight to the eye.
+
+**Why I did not use the Shapiro-Wilk test to decide.** With 10,000 simulated means the test detects tiny, harmless departures. It rejected the exponential even at n = 200 (p = 0.0002) and the small binomial at n = 500 (p = 0.03). It even rejected the truly normal population at n = 200 (p = 0.035), which happens about 5% of the time by chance. I report it, but one p-value does not make the decision.
+
+**Two more rules.**
+
+1. *Every larger n must also pass.* Near a cutoff, noise can make one *n* pass and the next fail. For the life/death population, n = 14 passed, n = 15 failed (skewness −0.255) and n = 16 onward all passed, so I chose 16, not 14.
+2. *The plots must agree.* At every chosen *n* I checked that the histogram is bell-shaped and the Q-Q plot has no systematic bend or staircase.
+
+## Results
+
+```{r summary-table}
+summary_rows <- lapply(names(chosen_n), function(pop) {
+  n <- if (is.na(chosen_n[[pop]])) 1000 else chosen_n[[pop]]
+  t <- run_study(pop, n, B = B, seed = student_id)$table
+  data.frame(population = pop,
+             chosen_n   = chosen_n[[pop]],
+             evaluated_at_n = n,
+             skewness   = t$skewness,
+             ex_kurt    = t$ex_kurt,
+             qq_cor     = t$qq_cor,
+             se_ratio   = t$se_ratio)
+})
+summary_tbl <- do.call(rbind, summary_rows)
+knitr::kable(summary_tbl, digits = 3, row.names = FALSE,
+             caption = "Statistics at each population's chosen n (Cauchy: no n works, shown at n = 1000). se_ratio = simulated SE / (σ/√n).")
+```
+
+```{r n-chart, fig.width = 8, fig.height = 4}
+finite <- chosen_n[!is.na(chosen_n)]
+finite <- sort(finite)
+op <- par(mar = c(4, 10, 3, 2))
+barplot(finite, horiz = TRUE, las = 1, col = "grey70", border = NA,
+        xlab = "Smallest n judged approximately normal",
+        main = "Required sample size by population (Cauchy: never)")
+abline(v = 30, col = "red", lwd = 2, lty = 2)
+text(30, length(finite) * 1.15, "n = 30", col = "red", pos = 4)
+par(op)
+```
+
+| Population | Chosen n | What limited it | Key observation |
+|---|---|---|---|
+| Normal | 1 | Nothing | Means of normal data are exactly normal at any n; the control case |
+| Life/death (EC) | 16 | Skewness, Q-Q | Bimodal, yet fast: bounded, moderate skew (−0.86), 101 possible values |
+| Die | 9 | Q-Q (discreteness) | Symmetric, so skew was never an issue; only 11 possible means at n = 2 |
+| Exponential | 80 | Skewness, Q-Q | Skewness followed theory, 2/√n; still 0.36 at n = 30 |
+| Binomial small | 80 | Q-Q (discreteness + skew) | 59% of draws are 0; skew passed at n = 25 but the Q-Q staircase lasted to 80 |
+| Basketball (EC) | 125 | Q-Q (discreteness) | Non-identical p barely mattered; 0/1 outcomes made it slow |
+| Dependent failure (EC) | 300 | Skewness, Q-Q | Mean ≈ 1.67 (not 1); SE 2.16× the naive formula |
+| Cauchy | none | Everything | IQR of the means stayed ≈ 2 from n = 1 to n = 1,000 |
+
+## Is the answer 30?
+
+**No.** "n ≥ 30" is a rough guide that happens to fall in the middle of my results:
+
+- **Too strict** for the Normal (1), Die (9) and Life/death (16) populations.
+- **Too lenient** for the Exponential (80), Small binomial (80), Basketball (125) and Dependent failure (300) populations. At n = 30 the exponential's skewness was still 0.36, and the dependent process's was 0.75.
+- **Meaningless** for the Cauchy, where no n works.
+
+A rule that ignores the population's shape cannot be universal. For the exponential, theory even gives the answer directly: the skewness of the mean is 2/√n, so reaching a skewness of 0.25 requires n ≥ (2/0.25)² = 64, close to my simulated answer of 80.
+
+## Which populations converged fastest and slowest, and why?
+
+From fastest to slowest: Normal (1) → Die (9) → Life/death (16) → Exponential and Small binomial (80) → Basketball (125) → Dependent failure (300) → Cauchy (never).
+
+Three features explain the order:
+
+1. **Skewness.** For independent data, the skewness of the mean shrinks like (population skewness)/√n. The exponential (skewness 2) needed far more than the life/death population (−0.86) or the symmetric die (0).
+2. **Discreteness.** When each observation can take only a few values, the sample mean can take only a limited number of values, so the Q-Q plot looks like a staircase until n is large. This was the limiting factor for the Die, Small binomial and Basketball. It is why the small binomial needed as many observations as the exponential despite lower skewness (1.19 vs 2).
+3. **Broken assumptions.** Dependence slowed convergence about fourfold compared with an independent exponential, and infinite variance (Cauchy) prevented it entirely.
+
+Surprisingly, **bimodality did not matter much.** The two-humped life/death population was one of the fastest, because it is bounded, only moderately skewed, and nearly continuous.
+
+## Distributions that had issues or surprised me
+
+**Cauchy (heavy tails, no finite variance).** No sample size worked, even n = 5,000. Skewness swung between −62 and +87 and the Q-Q correlation never rose above 0.32. Most striking, averaging did not reduce the spread at all: the IQR of the sample means was 2.03 at n = 1 and 2.02 at n = 1,000. The mean of n Cauchy values has exactly the same Cauchy distribution as a single value, so collecting more data gives no improvement. The CLT requires finite variance, and the Cauchy has none.
+
+**Dependent machine failure (independence broken).** Every operating time is exponential, yet the process behaved very differently from independent exponential data. The long-run mean was 1.68, not 1, and the SD was 2.57, not 1. The simulated SE was about 2.16 times the naive 1/√n. Convergence needed n = 300, nearly four times the independent exponential. If an analyst ignored the dependence and used the standard formulas, they would get the center wrong and underestimate the uncertainty by more than half. The lag-1 correlation of −0.36 also partly offsets this: the simulated SE was about 16% smaller than 2.57/√n, because long runs tend to be followed by short ones.
+
+**Basketball shots (identical distribution broken).** Breaking the "identically distributed" assumption mattered much less than I expected. With the correct formula (SE = √Σp_t(1−p_t) / n), the simulation matched theory at every n (SE ratio 0.99–1.02). The naive binomial formula with p = 0.70 overstated the SE by 3–5%, because shots with p near 0.9 are more predictable. What made this population slow was that each shot is only 0 or 1.
+
+**Life/death mixture (bimodal).** Despite its two peaks, the sample means formed a single bell curve by n = 16, centered at about 50 years, an age at which only about 1% of deaths occur. It also gave the clearest example of Monte Carlo noise near a cutoff (n = 14 passed, n = 15 failed, n = 16 onward passed).
+
+**Small binomial.** Skewness and kurtosis alone would have called this population normal at about n = 25, but the Q-Q correlation showed a visible staircase until n = 80. This is why I used more than one criterion.
+
+## Assumptions: what happened when they failed?
+
+| Assumption broken | Population | Did the mean become normal? | Did σ/√n work? |
+|---|---|---|---|
+| None | Normal, Die, Exponential, Small binomial, Life/death | Yes (n = 1 to 80) | Yes, at every n, even n = 2 |
+| Identically distributed | Basketball | Yes (n = 125) | Yes, using each shot's own p_t |
+| Independence | Dependent failure | Yes, but slowly (n = 300) | **No**: SE 2.16× too large and mean ≠ 1 |
+| Finite variance | Cauchy | **Never** | **Undefined**: spread never shrinks |
+
+## Conclusions about the CLT
+
+1. **The CLT is about the *shape* of the sampling distribution, and the speed of convergence depends on the population.** There is no universal n.
+2. **The mean and SE results hold immediately.** For every population with independent observations and finite variance, the simulated mean and SE matched theory even at n = 2, long before the shape looked normal.
+3. **Skewness and discreteness determine how large n must be.** Symmetry and continuity help; skew and having only a few possible values slow things down.
+4. **The assumptions matter more than the shape.** Non-identical but independent data were fine. Dependent data converged slowly *and* had the wrong mean and SE. Infinite-variance data never converged at all.
+5. **Judging normality needs several kinds of evidence.** Moment statistics missed staircase effects that the Q-Q plot caught, and the Shapiro-Wilk test was too sensitive to be useful with 10,000 simulated means.
+
+## Reproducibility
+
+All results use `set.seed()` with 8515, the last four digits of my student ID, set immediately before every simulation, so anyone who renders these files gets identical numbers. In the exponential file I reran the analysis with seed 8516. The exact statistics changed slightly, and the chosen n moved from 80 to 100, but the conclusion (far more than 30, roughly 80–100) did not change. The number of repetitions B = 10,000 controls this Monte Carlo noise; the sample size n controls the actual shape of the sampling distribution.

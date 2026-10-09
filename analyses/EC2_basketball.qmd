@@ -1,0 +1,102 @@
+---
+title: "CLT Convergence: Non-identical Basketball Shots (Extra Credit)"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "basketball"
+```
+
+## 1. What does the population look like?
+
+X_t ~ Bernoulli(p_t), where p_t falls evenly from 0.90 (first shot) to 0.50 (last shot) to model fatigue. The shots are independent but **not identically distributed**, so the total is Poisson-binomial, not binomial.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+Each observation is a single shot: 1 if made, 0 if missed, so the population is discrete with only two values. Overall about 70% of shots are made, but the probability falls steadily from 0.90 on the first shot to 0.50 on the last to model fatigue. The shots are independent, but they are not identically distributed because each shot has its own p_t. This population breaks the CLT's "identically distributed" assumption while keeping independence and finite variance.
+## 2. Theoretical mean and standard deviation
+
+E(X̄) = average of the p_t = 0.70. Var(X̄) = Σ p_t(1 − p_t) / n². The theory columns use this exact formula.
+
+```{r naive-compare}
+# What if you wrongly assumed every shot had p = 0.70 (ordinary binomial)?
+ns_check <- c(5, 10, 20, 50, 100)
+data.frame(n = ns_check,
+           correct_se = sapply(ns_check, function(n) theory$basketball(n)["se"]),
+           naive_se   = sqrt(0.7 * 0.3 / ns_check))
+```
+
+The naive SE, which treats every shot as p = 0.70, is larger than the correct SE at every n: about 5% larger at n = 5 (0.205 vs 0.195) and about 3% larger at n = 100 (0.0458 vs 0.0443). Varying p reduces the variance because p(1 − p) is largest at p = 0.5 and gets smaller as p moves away from 0.5. Shots with p near 0.9 are very predictable, so averaging p(1 − p) over the changing p_t gives less than 0.70 × 0.30. Using the naive binomial formula would slightly overstate the uncertainty.
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: Each shot is still independent and has finite variance, so I expect the CLT to still work even though the shots are not identically distributed. Because each shot is only 0 or 1, I expect the sample mean to look choppy at small n, and since most shots have p above 0.5, I expect a slight left skew. I predict it will look normal at around n = 50–100. I expect the simulated mean to be near 0.70 and the SE to match the non-identical formula, not the simple binomial one.
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(60, 70, 80, 90, 100, 125, 150)   # pass 1 changed between n = 100 and n = 200
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+In pass 1, n = 100 failed my standard (Q-Q correlation 0.9977) and n = 200 passed. I refined from 60 to 150 to find where the Q-Q correlation crosses 0.998 and stays above it.
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+Using the correct formulas for non-identical shots (mean = average of the p_t = 0.70, SE = √(Σ p_t(1 − p_t)) / n), the simulation matched theory very well: the simulated mean was within 0.004 of 0.70 at every n, and the SE ratio stayed between 0.99 and 1.02. This shows that the CLT's mean and SE results still hold for independent but non-identical observations, as long as the variance is computed from each observation's own p_t.
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show values below, at, and above my chosen n
+for (n in c(30, 125, 500)) {
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = 125}$$
+
+I used the same standard as every other population: |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and Q-Q correlation ≥ 0.998. Kurtosis passed from n = 10 on, and skewness passed from n = 20 on (−0.18). The Q-Q correlation was the last to pass: 0.99769 at n = 100, just below the cutoff, and 0.99818 at n = 125, staying above 0.998 at every larger n. At n = 30 the Q-Q plot shows clear steps and the histogram has gaps between bars. At n = 125 the steps are small enough that the points follow the line, and the histogram is bell-shaped. Like the die and the small binomial, this population was limited by discreteness, not by skew. The Shapiro-Wilk test still rejected at n = 500 (p = 0.0017), again because it detects the remaining steps.
+## 7. Limitations and surprises
+
+I expected that breaking the "identically distributed" assumption would cause problems like the dependent model did, but it barely mattered. Because the shots are still independent and every p_t is between 0.5 and 0.9 (finite variance, no single shot dominating), the CLT still works, and the exact SE formula matched the simulation at every n. The slow part was discreteness: each shot is 0 or 1, so with n shots the average can only take n + 1 values, and the Q-Q plot shows steps until n is large. The skewness was negative (left skew) because most shots have p above 0.5, so made shots are more common and the long tail is on the low side. One limitation of this model: when n changes, the 0.90 → 0.50 fatigue schedule is stretched over n shots, so "n = 125" means 125 shots with the same overall fatigue pattern, not a longer game with more fatigue.

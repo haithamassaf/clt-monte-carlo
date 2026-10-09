@@ -1,0 +1,105 @@
+---
+title: "CLT Convergence: Cauchy"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "cauchy"
+```
+
+## 1. What does the population look like?
+
+X ~ Cauchy(location = 0, scale = 1), generated with `rcauchy()`. Extremely heavy tails.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The population is continuous and symmetric around 0 and looks like a bell curve in the middle, but its tails are extremely heavy: very large values (in the hundreds or thousands) happen far more often than in a normal distribution. The plot had to cut off values beyond ±15 to be readable. Because the tails are so heavy, the Cauchy has no finite mean and no finite variance. The draws are independent and identically distributed, but the finite-variance assumption of the CLT fails.
+## 2. Theoretical mean and standard deviation
+
+The Cauchy has **no** mean and **no** variance (the integrals don't converge), so σ/√n doesn't exist. The theory columns in the table are NA on purpose.
+
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: The Cauchy has extremely heavy tails and no finite mean or variance, which breaks one of the CLT's assumptions. I predict that the sample mean will never become normal, no matter how large n is, because occasional huge values will keep dominating the average.
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (extended):** much larger values, since nothing passed in pass 1.
+
+```{r pass2}
+ns_fine <- c(1000, 2000, 5000)   # nothing passed in pass 1, so test much larger n
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+Nothing in pass 1 came close to passing: skewness, kurtosis and Q-Q correlation were far from normal at every n up to 500, with no downward trend. Instead of refining, I extended the search to much larger samples (n = 1,000, 2,000 and 5,000) to check whether normality appears at very large n. It did not.
+
+**Does averaging shrink the spread?** For a distribution with finite variance, the middle 50% of the sample means (the IQR) should shrink like 1/√n. Here is what happens for the Cauchy:
+
+```{r iqr-check}
+iqr_tbl <- data.frame(n = c(1, 10, 100, 1000))
+iqr_tbl$IQR_of_means <- sapply(iqr_tbl$n, function(n)
+  IQR(simulate_means(populations[[pop]], n, B, student_id)))
+knitr::kable(iqr_tbl, digits = 3)
+```
+
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+There is no theoretical mean or standard error to compare against, because the Cauchy has no mean and no variance; that is why the theory columns are NA. The simulated means stayed scattered between about −1.7 and +1.7 with no sign of settling, and the simulated SD of the means stayed between 41 and 142 instead of shrinking like 1/√n. Both results show that the usual σ/√n formula cannot be used here.
+
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show small, medium, and very large n
+for (n in c(10, 100, 1000)) {
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{\text{No } n \text{ works: the CLT does not apply}}$$
+
+I used the same standard as every other population: |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and Q-Q correlation ≥ 0.998. No sample size passed, even after extending the search to n = 5,000. Skewness swung randomly between −62 and +87, excess kurtosis stayed between about 900 and 8,200, and the Q-Q correlation never rose above 0.32. None of the measures showed any trend toward normality as n increased. The histograms show a single narrow spike with a few extreme values far away, and the Q-Q plots are flat in the middle with points shooting off at both ends. This is the pattern of extremely heavy tails, and it looks the same at n = 10, 100 and 1,000. The IQR table confirms it: the spread of the sample means does not shrink with n. The CLT requires a finite variance, and the Cauchy has no finite mean or variance, so the CLT does not apply. My conclusion is that there is no n at which the sample mean becomes approximately normal.
+
+## 7. Limitations and surprises
+
+The most surprising result was that averaging did not reduce the spread at all. The IQR of the sample means was 2.03 at n = 1 and still 2.02 at n = 1,000. For every other population, the spread shrank like 1/√n. The explanation is a known property of the Cauchy: the mean of n independent Cauchy(0, 1) values has exactly the same Cauchy(0, 1) distribution as a single value. Averaging 1,000 observations gives no more information about the center than one observation does. I was also surprised that the simulated SD of the means got neither smaller nor stable as n grew (139 at n = 2, 142 at n = 500, 123 at n = 5,000). Each run is dominated by a few enormous values, because the Cauchy's tails are so heavy that its variance is infinite.

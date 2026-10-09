@@ -1,0 +1,98 @@
+---
+title: "CLT Convergence: Standard Normal"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "normal"
+```
+
+## 1. What does the population look like?
+
+X ~ Normal(mu = 0, sigma = 1), generated with `rnorm()`.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The population is a continuous, symmetric bell curve centered at 0 with standard deviation 1 and no skew. Its tails are thin, and it satisfies every CLT assumption: independent, identically distributed, finite variance. This is the baseline case to compare the other populations against.
+
+## 2. Theoretical mean and standard deviation
+
+Theoretical mean = 0, SD = 1, so SE(X̄) = 1/√n.
+
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: Since the population is already normal, I expect the sample mean to be normal at every sample size, even n = 1, because averaging normal values always produces a normal distribution. I expect the simulated mean to be near 0 and the SE to match 1/√n at every n.
+
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(1, 2, 3, 4)   # every n passed in pass 1, so check down to n = 1
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+Every value in pass 1 already passed, starting at the smallest n = 2. So instead of refining between two values, I checked downward to n = 1, 2, 3, 4 to confirm the smallest possible sample size also passes..
+
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+The simulated mean was within 0.014 of the theoretical mean of 0 at every n, and the SE ratio stayed between 0.98 and 1.01. The simulation agrees with σ/√n at every sample size, as expected for a normal population.
+
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file.
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show the smallest n and two larger ones
+for (n in c(1, 2, 30)) {  # smallest n, plus two larger ones for comparison
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = \text{1}}$$
+
+Every sample size passed my standard, including n = 1: |skewness| ≤ 0.06, |excess kurtosis| ≤ 0.13, and Q-Q correlation ≥ 0.9998 at every n. The histograms match the red normal curve and the Q-Q points lie on the line even at n = 1. This matches theory: a sum of independent normal variables is exactly normal, so the sample mean is normal for every n and the CLT is not even needed. The normal population serves as my control. It shows that my criteria do not falsely flag a truly normal distribution, and it shows how much the statistics vary from noise alone.
+
+## 7. Limitations and surprises
+
+The Shapiro-Wilk test rejected normality at n = 200 (p = 0.035), even though the sample means of a normal population are exactly normal. At a 0.05 significance level the test wrongly rejects about 5% of the time by chance, so one p-value can mislead. This supports my decision not to let a formal test decide. I was also surprised that the skewness and kurtosis of truly normal data were not exactly 0: they ranged up to 0.06 and 0.13. This is the Monte Carlo noise level, and it is why my cutoffs (0.25 and 0.3) sit above it.

@@ -1,0 +1,122 @@
+---
+title: "CLT Convergence: Exponential"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "exponential"
+```
+
+## 1. What does the population look like?
+
+X ~ Exponential(rate = 1), generated with `rexp()`. Strong right skew (population skewness = 2).
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The population is continuous and only takes positive values. Most values are bunched near 0, and the right tail stretches past 5, so it is strongly right-skewed (skewness = 2) and looks nothing like a bell curve. It still has a finite mean and variance and the draws are independent, so the CLT applies. I expect it to work slowly because of the skew.
+
+## 2. Theoretical mean and standard deviation
+
+Theoretical mean = 1, SD = 1, so SE(X̄) = 1/√n.
+
+## 3. Prediction (write this BEFORE running the simulations)
+
+The exponential population is strongly right-skewed (skewness = 2) with a long right tail, so I expect the sample means to stay right-skewed at small n. Since this population is more skewed than what the "n = 30" rule assumes, I predict it will take more than 30, around n = 50–100, before the histogram looks symmetric and the Q-Q plot is straight. I expect the simulated mean to stay near 1 and the simulated SE to match 1/√n at every n, since those CLT formulas don't depend on the population's shape.
+
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(60, 70, 80, 90, 100, 125, 150)   
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+Pass 1 showed skewness falling steadily but still above my 0.25 cutoff at n = 50 (0.26) and passing by n = 100 (0.20). Kurtosis met its cutoff by n = 20, so skewness and the Q-Q correlation were the criteria that limited this population. I refined between 60 and 150 to find where they cross their cutoffs. Both first passed at n = 80 and stayed passing at every larger n.
+
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+The simulated mean was within about 0.01 of the theoretical mean of 1 at every n, including n = 2. The SE ratio stayed between 0.99 and 1.02 at every n, so σ/√n described the spread of the sample means even at n = 2, where the distribution was clearly not normal. The mean and SE formulas don't depend on normality. Only the shape of the sampling distribution needs a large n.
+
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+#  My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show values below, at, and above your chosen n
+for (n in c(30, 100, 500)) {   # below, at, and above my chosen n
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = \text{80}}$$
+
+My standard: the sampling distribution is "normal enough" when |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and the Q-Q correlation is ≥ 0.998, confirmed by a Q-Q plot with no systematic bend in the tails. I chose 0.25 for skewness because my reproducibility test showed skewness changing by up to about 0.07 between seeds, so a stricter cutoff would be deciding on noise. I did not use the Shapiro-Wilk test to decide: with 10,000 means it detects tiny departures and still rejected at n = 80 (p ≈ 1e-8) and at n = 200 (p = 0.0002).
+
+For the exponential, kurtosis was below 0.3 by n = 20, while skewness and the Q-Q correlation were the last criteria to pass, both starting at n = 80. The skewness of the mean followed theory closely: skewness = 2/√n (0.365 predicted vs 0.361 observed at n = 30, and 0.200 vs 0.204 at n = 100). Solving 2/√n ≤ 0.25 gives n ≥ 64, which agrees with my simulation's answer of n = 80. At n = 30 the Q-Q plot still bends upward at both ends and the histogram has a longer right tail. At n = 100 and above, the Q-Q points sit on the line.
+
+## 7. Limitations and surprises
+
+1. n = 30 was not enough. At n = 30, skewness was still 0.36, and the Q-Q plot visibly curved in both tails. The "n ≥ 30" rule understates how long a strongly skewed population takes.
+
+2. The SE matched σ/√n almost perfectly even at n = 2 (ratio 1.01), while the shape was far from normal. I expected both to improve together, but the CLT's spread formula holds immediately and only the shape converges slowly.
+
+3. Skewness shrank like 2/√n, so the required n for any skewness cutoff can be predicted ahead of time: n ≥ (2 / cutoff)². However, the simulated skewness did not always decrease smoothly. It was 0.263 at n = 50 but 0.296 at n = 60, which is Monte Carlo noise. This is why I judged convergence on the overall trend and required every larger n to pass as well.
+
+## Reproducibility experiment
+
+```{r repro}
+other_seed <- student_id + 1
+repro <- run_study(pop, all_results$n, B = B, seed = other_seed)
+knitr::kable(data.frame(
+  n            = all_results$n,
+  skew_myseed  = all_results$skewness,
+  skew_other   = repro$table$skewness,
+  qqcor_myseed = all_results$qq_cor,
+  qqcor_other  = repro$table$qq_cor
+), digits = 4)
+c(my_seed = smallest_normal_n(all_results, criteria),
+  other   = smallest_normal_n(repro$table, criteria))
+```
+
+With seed 8516 instead of 8515, the exact values changed. For example, skewness at n = 80 was 0.228 with my seed but 0.262 with the other, and at n = 50 it was 0.263 vs 0.316. As a result, the smallest n meeting my standard moved from 80 to 100. The overall conclusion did not change: the exponential needs far more than 30, roughly 80–100, consistent with the theoretical prediction of n ≥ 64 from skewness = 2/√n. This shows that near a cutoff, Monte Carlo noise can move the exact answer by a step or two on the grid, so the final n should be read as an approximate range, not a precise number. B (10,000 repetitions) controls that noise, while n controls the actual shape of the sampling distribution. Increasing B would make the two seeds agree more closely but would not make the distribution more normal.

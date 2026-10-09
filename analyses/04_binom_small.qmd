@@ -1,0 +1,98 @@
+---
+title: "CLT Convergence: Binomial Small"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "binom_small"
+```
+
+## 1. What does the population look like?
+
+X ~ Binomial(size = 5, p = 0.10), generated with `rbinom()`. Takes only the values 0-5, and about 59% of draws are 0.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The population is discrete and can only take the values 0 to 5. It is strongly right-skewed (skewness ≈ 1.19): about 59% of draws are 0, 33% are 1, 7% are 2, and values of 3 or more happen less than 1% of the time. The bar chart is a tall bar at 0 that drops off quickly. It satisfies every CLT assumption (independent, identically distributed, finite variance), so the CLT applies, but both the skew and the discreteness should slow convergence.
+
+## 2. Theoretical mean and standard deviation
+
+Theoretical mean = 5(0.1) = 0.5, SD = √(5·0.1·0.9) ≈ 0.671, so SE(X̄) = 0.671/√n.
+
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: This population is very skewed to the right and highly discrete: most draws are 0, and values of 3 or more are rare. I expect the sample mean to stay skewed and choppy for a while, and predict it will need more than 30, perhaps around n = 50, before it looks normal. I expect the simulated mean to be near 0.5 and the SE to match 0.671/√n.
+
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(25, 30, 35, 40, 45, 50, 60, 70, 80)   # pass 1 changed between n = 50 and n = 100
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+In pass 1, n = 50 failed my standard and n = 100 passed, and skewness was already close to the cutoff around n = 20–30. I refined from 25 to 80 in steps of 5 and 10 to find where all three criteria pass and keep passing.
+
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+The simulated mean was within 0.005 of the theoretical mean of 0.5 at every n, and the SE ratio stayed between 0.99 and 1.01. The simulation agrees with σ/√n = 0.671/√n at every sample size, even at n = 2 where the sampling distribution is very skewed and choppy.
+
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show values below, at, and above my chosen n
+for (n in c(30, 80, 200)) {
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = \text{80}}$$
+
+I used the same standard as every other population: |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and Q-Q correlation ≥ 0.998. Kurtosis passed from n = 5 on, and skewness passed from n = 25 on, roughly following the theoretical 1.19/√n. The Q-Q correlation was the last criterion to pass: 0.99799 at n = 70, just below the cutoff, and 0.99803 at n = 80, staying above 0.998 at every larger n. At n = 30 the Q-Q plot still has visible steps and a slight upward bend in the right tail. At n = 80 the steps are small and the points follow the line, and the histogram is bell-shaped. So this population needs about n = 80, the same as the exponential, even though its skewness (1.19) is lower than the exponential's (2). Its discreteness adds to the sample size needed.
+
+## 7. Limitations and surprises
+
+If I had used only skewness and kurtosis, I would have called this population normal at n = 25: skewness was 0.21 and kurtosis was near 0. But the Q-Q correlation was still only 0.995, and the Q-Q plot showed a clear staircase. The reason is discreteness combined with the pile-up at 0: about 59% of all draws are 0, so the sample mean can only take a small number of values (7 different values at n = 2, 28 at n = 30, 43 at n = 60). It took until n = 80 for the steps to become small enough. This is why I used more than one criterion: the moment-based statistics missed a problem that the Q-Q plot caught. The Shapiro-Wilk test still rejected even at n = 500 (p = 0.027), because it keeps detecting the discreteness.

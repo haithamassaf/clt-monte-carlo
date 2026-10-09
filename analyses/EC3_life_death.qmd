@@ -1,0 +1,93 @@
+---
+title: "CLT Convergence: Life/Death Mixture (Extra Credit)"
+format:
+  html:
+    toc: true
+    code-fold: show
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+source("../R/clt_functions.R")
+
+student_id <- 8515     # last 4 digits of my student ID
+B          <- 10000    # number of simulated samples (NOT the sample size)
+pop        <- "life_death"
+```
+
+## 1. What does the population look like?
+
+Age at death on 0-100: an early-death exponential decay (high at age 0) mixed with an adult bell curve centered at 65 (SD 10), normalized to sum to 1. **Bimodal** and discrete.
+
+```{r population}
+plot_population(pop, seed = student_id)
+```
+
+The population is discrete (whole-number ages from 0 to 100) and bimodal. A large early-death peak starts at age 0 and falls off quickly during childhood, and a second bell-shaped peak sits around age 65. About 24% of deaths occur before age 20. Because the bigger peak is on the right and the long tail stretches down to 0, it is left-skewed (skewness ≈ −0.86). The mean is about 50 but the median is 61. The values are bounded, so there are no extreme outliers. It satisfies every CLT assumption (independent, identically distributed, finite variance).
+## 2. Theoretical mean and standard deviation
+
+Theoretical mean = Σ x·p(x) ≈ 49.98 years, SD ≈ 27.63 years, so SE(X̄) = 27.63/√n.
+
+## 3. Prediction (write this BEFORE running the simulations)
+
+Prediction: This population has two separate peaks, one at early childhood and one around age 65, so it is far from a bell curve. I expect the bimodal shape to slow convergence, and predict it will need around n = 30–50 before the sample mean looks normal. I expect the simulated mean to be near 49.98 years and the SE to match 27.63/√n.
+## 4. Which sample sizes did I investigate?
+
+**Pass 1 (coarse):** a wide grid to find roughly where the change happens.
+
+```{r pass1}
+ns_coarse <- c(2, 5, 10, 20, 30, 50, 100, 200, 500)
+coarse    <- run_study(pop, ns_coarse, B = B, seed = student_id)
+knitr::kable(coarse$table, digits = 4)
+plot_convergence(coarse$table, pop)
+```
+
+**Pass 2 (refined):** narrower values around the transition.
+
+```{r pass2}
+ns_fine <- c(12, 14, 15, 16, 17, 18, 19, 20, 25)   # pass 1 changed between n = 10 and n = 20
+fine    <- run_study(pop, ns_fine, B = B, seed = student_id)
+knitr::kable(fine$table, digits = 4)
+```
+
+In pass 1, n = 10 failed my standard and n = 20 passed. I refined between 12 and 25, testing every value from 14 to 20, to find where all three criteria pass and keep passing.
+## 5. Simulated vs. theoretical mean and standard error
+
+The table columns `sim_mean` / `theo_mean` and `sim_se` / `theo_se` compare the simulation with the CLT's predictions. `se_ratio` = simulated SE ÷ σ/√n, so 1 means a perfect match.
+
+The simulated mean was within 0.18 years of the theoretical mean of 49.98 at every n, and the SE ratio stayed between 0.98 and 1.01. The simulation agrees with σ/√n = 27.63/√n at every sample size, even at n = 2 where the sampling distribution is still skewed.
+## 6. My "normal enough" standard and the chosen n
+
+```{r criteria}
+# My "normal enough" standard, used identically in every file
+criteria <- list(
+  max_abs_skew = 0.25,    # mild skew; tighter is within Monte Carlo noise
+  max_abs_kurt = 0.3,     # tails close to normal
+  min_qq_cor   = 0.998    # Q-Q plot essentially straight
+)
+
+all_results <- rbind(coarse$table, fine$table)
+all_results <- all_results[!duplicated(all_results$n), ]
+all_results <- all_results[order(all_results$n), ]
+all_results$passes <- passes_standard(all_results, criteria)
+knitr::kable(all_results, digits = 4)
+
+smallest_normal_n(all_results, criteria)
+```
+
+```{r plots, fig.width = 9, fig.height = 3.5}
+# Show values below, at, and above my chosen n
+for (n in c(5, 16, 50)) {
+  plot_diagnostics(simulate_means(populations[[pop]], n, B, student_id), n, pop)
+}
+```
+
+$$\boxed{n = 16}$$
+
+I used the same standard as every other population: |skewness| ≤ 0.25, |excess kurtosis| ≤ 0.3, and Q-Q correlation ≥ 0.998. Kurtosis passed from n = 5 on. Skewness and the Q-Q correlation were the last to pass. At n = 15, skewness was −0.255 and the Q-Q correlation was 0.99795, both just short. At n = 16 they were −0.239 and 0.99823, and both kept passing at every larger n. The skewness follows the theoretical −0.86/√n, which predicts the 0.25 cutoff is reached at about n = 12, close to my result. At n = 5 the histogram has a longer left tail and the Q-Q plot bends at the lower end. At n = 16 the histogram is bell-shaped and the Q-Q points follow the line. My answer, n = 16, is below the "n = 30" rule.
+## 7. Limitations and surprises
+
+I expected the two-humped shape to make this the hardest finite-variance population, but it converged faster than the exponential, the small binomial, and the basketball model. Bimodality by itself does not slow the CLT. What matters is skewness, heavy tails and discreteness, and this population does well on all three: it is bounded between 0 and 100 (no extreme values), its skewness (−0.86) is less than half the exponential's (2), and it has 101 possible ages, so it behaves almost like a continuous distribution. Another surprise: the mean age at death (about 50) falls in the valley between the two peaks, an age where only about 1% of deaths happen. Yet the sample means pile up in a single bell curve around exactly that value. Finally, my results showed Monte Carlo noise clearly: n = 14 passed my standard, n = 15 failed (skewness −0.255, just over the cutoff), and n = 16 and every larger n passed. That is why I require every larger n to pass, not just one.
